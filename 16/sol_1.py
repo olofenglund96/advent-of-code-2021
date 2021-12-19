@@ -36,34 +36,65 @@ def hex_to_bin(hex):
   return bitstr
 
 
-def parse_literal(packet):
-  leading_0 = packet[0] == '0'
+def parse_literal(packet, last_packet=False):
+  leading_0 = False
   ix = 0
+  value = ''
   while not leading_0:
-    subp = packet[ix+1:ix+5]
-    leading_0 = subp[0]
+    subp = packet[ix:ix+5]
+    leading_0 = subp[0] == '0'
+    value += subp[1:]
     ix += 5
 
-
-
+  return value, ix
 
 
 
 def parse_subpacket(packet):
-  binary_packet = hex_to_bin(packet)
-  version, type_id = binary_packet[:3], binary_packet[3:6]
+  version, type_id = int(packet[:3], 2), packet[3:6]
+  version_sum = version
+  print(f"{packet=}, {version=}, {type_id=}")
+  i = 6
 
   if type_id == '100':
-    next_idx = parse_literal(binary_packet[7:])
+    literal_value, next_idx = parse_literal(packet[i:])
+    i += next_idx
+    print(f"literal_value={int(literal_value, 2)}, {next_idx=}")
+  else:
+    lid = packet[i]
+    i += 1
+    if lid == '0':
+      packet_length = int(packet[i:i+15], 2)
+      print(f"{packet_length=}")
+      i += 15
+      j = i
+      while j < i + packet_length:
+        sub_sum, sub_j = parse_subpacket(packet[j:])
+        version_sum += sub_sum
+        j += sub_j
+      
+      i += packet_length
+    else:
+      num_packets = int(packet[i:i+11], 2)
+      print(f"{num_packets=}")
+      i += 11
+      for _ in range(num_packets):
+        sub_sum, j = parse_subpacket(packet[i:])
+        i += j
+        version_sum += sub_sum
+      
 
-  print(version, type_id)
+  return version_sum, i
 
 
-@decorators.with_sample
+@decorators.with_input
 def main(lines):
-  sub_packet = 'D2FE28'
+  packet = 'A0016C880162017C3686B18A3D4780'
+  #packet = lines[0].strip()
+  binary_packet = hex_to_bin(packet)
 
-  parse_subpacket(sub_packet)
+  version_sum, _ = parse_subpacket(binary_packet)
+  print(version_sum)
 
 
 

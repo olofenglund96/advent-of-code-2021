@@ -9,163 +9,111 @@ from colorama import Fore, Style
 import math
 
 
+def hex_to_bin(hex):
+  htb_map = {
+    '0': '0000',
+    '1': '0001',
+    '2': '0010',
+    '3': '0011',
+    '4': '0100',
+    '5': '0101',
+    '6': '0110',
+    '7': '0111',
+    '8': '1000',
+    '9': '1001',
+    'A': '1010',
+    'B': '1011',
+    'C': '1100',
+    'D': '1101',
+    'E': '1110',
+    'F': '1111'
+  }
 
-def print_grid(grid, queue=None, path=[], explored=[]):
-  dash = "------------"
-  printstr = f"{dash}\n"
-  printstr += f"{dash}\n"
-  qpoints = []
-  if queue:
-    for _, ix in queue:
-      qpoints.append(ix)
+  bitstr = ""
+  for c in hex:
+    bitstr += htb_map[c]
 
-  for i, row in enumerate(grid):
-    for j, val in enumerate(row):
-
-      if (i, j) in path:
-        add = f"{Fore.RED}{int(val)}{Fore.RESET}"
-      # elif (i, j) == index2:
-
-      #   add = f"{Fore.CYAN}{int(val)}{Fore.RESET}"
-      else:
-        if (i, j) in explored and explored[(i, j)]:
-          add = f"{Fore.CYAN}{int(val)}{Fore.RESET}"
-        else:
-          add = f"{Style.DIM}{int(val)}{Style.RESET_ALL}"
-
-      printstr += add
-
-    printstr += '\n'
-
-  print(printstr, end="")
-  print(dash)
+  return bitstr
 
 
-def get_adjacent_indices(i_max, j_max, i, j, diag=False):
-  border = [(i, j-1), (i-1, j), (i+1, j), (i, j+1)]
+def parse_literal(packet, last_packet=False):
+  leading_0 = False
+  ix = 0
+  value = ''
+  while not leading_0:
+    subp = packet[ix:ix+5]
+    leading_0 = subp[0] == '0'
+    value += subp[1:]
+    ix += 5
 
-  if diag:
-    border.extend([(i-1, j-1), (i-1, j+1), (i+1, j+1), (i+1, j-1)])
-
-  i_check = []
-
-  for bi, bj in border:
-    if bi < 0 or bi >= i_max or \
-       bj < 0 or bj >= j_max:
-      continue
-
-    i_check.append((bi, bj))
-
-  return i_check
+  return value, ix
 
 
-def compute_weight(grid, point):
-  dx = abs(point[0] - grid.shape[0])
-  dy = abs(point[1] - grid.shape[1])
-  dist = dx + dy
-  return grid[point] + dist
+def combine_values(values, type_id):
+  type_num = int(type_id, 2)
+
+  if type_num == 0:
+    return sum(values)
+  if type_num == 1:
+    return math.prod(values)
+  if type_num == 2:
+    return min(values)
+  if type_num == 3:
+    return max(values)
+  if type_num == 5:
+    return int(values[0] > values[1])
+  if type_num == 6:
+    return int(values[0] < values[1])
+  if type_num == 7:
+    return int(values[0] == values[1])
 
 
-def compute_path(path_dict, ix):
-  path = [ix]
-  while ix in path_dict.keys():
-    ix = path_dict[ix]
-    path.insert(0, ix)
+def parse_subpacket(packet):
+  version, type_id = int(packet[:3], 2), packet[3:6]
+  values = []
+  print(f"{packet=}, {version=}, {type_id=}")
+  i = 6
 
-  return path
+  if type_id == '100':
+    literal_value, next_idx = parse_literal(packet[i:])
+    i += next_idx
+    print(f"literal_value={int(literal_value, 2)}, {next_idx=}")
+    return int(literal_value, 2), i
+  else:
+    lid = packet[i]
+    i += 1
+    if lid == '0':
+      packet_length = int(packet[i:i+15], 2)
+      print(f"{packet_length=}")
+      i += 15
+      j = i
+      while j < i + packet_length:
+        value, sub_j = parse_subpacket(packet[j:])
+        values.append(value)
+        j += sub_j
+      
+      i += packet_length
+    else:
+      num_packets = int(packet[i:i+11], 2)
+      print(f"{num_packets=}")
+      i += 11
+      for _ in range(num_packets):
+        value, j = parse_subpacket(packet[i:])
+        i += j
+        values.append(value)
+      
 
-
-def bfs(grid, explored, root):
-  explored[root] = True
-  g_score = {root: 0}
-  f_score = {root: compute_weight(grid, root)}
-
-  q = [(root)]
-  path_dict = {}
-  while len(q) > 0:
-    fs = 100000000000
-    fn = None
-    for i, it in enumerate(q):
-      fs_n = f_score[it]
-      if fs_n < fs:
-        fs = fs_n
-        fn = i
-
-    # print(q, f_score)
-    # print(q[fn])
-    # print(f_score[q[fn]])
-    # input()
-    i, j = q.pop(fn)
-    explored[(i,j)] = False
-
-    if (i, j) == (grid.shape[0] - 1, grid.shape[1] - 1):
-      return compute_path(path_dict, (i, j)), explored
-
-    adj_ix = get_adjacent_indices(grid.shape[0], grid.shape[1], i, j)
-
-    for xn in adj_ix:
-      new_score = g_score[(i, j)] + grid[xn]
-      if xn in g_score and g_score[xn] <= new_score:
-        continue
-
-      path_dict[xn] = (i, j)
-      g_score[xn] = new_score
-      f_score[xn] = new_score + compute_weight(grid, xn)
-
-      if not explored[xn]:
-        q.append((xn))
-        explored[xn] = True
-
-    # print(f"Queue: {q}")
-    # print(f"{path_dict=}")
-    # print(f"{g_score=}")
-    # print(f"{f_score=}")
-    # print_grid(grid, q, compute_path(path_dict, (i, j)))
-    # input()
-
+  return combine_values(values, type_id), i
 
 
 @decorators.with_input
 def main(lines):
-  grid = np.ndarray((len(lines), len(lines[0])))
+  #packet = '9C005AC2F8F0'
+  packet = lines[0].strip()
+  binary_packet = hex_to_bin(packet)
 
-  for i, line in enumerate(lines):
-    ints = [int(c) for c in list(line)]
-    grid[i,:] = ints
-
-  xlen, ylen = grid.shape
-  big_grid = np.ndarray((xlen*5, ylen*5))
-  for i in range(5):
-    for j in range(5):
-      ix, iy = i*xlen, j*ylen
-      #print(ix, iy)
-      big_grid[ix:ix+xlen, iy:iy+ylen] = grid + i + j
-      big_ix = np.where(big_grid > 9)
-      big_grid[big_ix] %= 9
-
-     # print(big_grid[ix:ix+xlen, iy:iy+ylen])
-     # input()
-
-  #print(big_grid)
- # print_grid(big_grid)
-  grid = big_grid
-  explored = np.zeros(grid.shape, dtype=bool)
-
-  path, explored = bfs(grid, explored, (0,0))
-
-  #print(explored)
-
-  print_grid(grid, queue=None, path=path, explored=explored)
-  tot_sum = 0
-  pathstr = ""
-  for p in path:
-    val = grid[p]
-    pathstr += f"{int(val)}->"
-    tot_sum += val
-
-  print(pathstr, grid[(0,0)])
-  print(tot_sum-grid[(0,0)])
-  #print(sum(path))
+  version_sum, _ = parse_subpacket(binary_packet)
+  print(version_sum)
 
 
 
